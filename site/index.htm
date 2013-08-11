@@ -1,0 +1,563 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>Tableau de bord</title>
+		
+		<style>
+
+			body {
+				font-family: "Open Sans","Helvetica Neue",sans-serif;
+				font-size: 12px;
+			}
+			
+			.compteur {
+				float: left;
+				border : 2px solid grey;
+				border-radius: 8px;
+				width: 230px;
+				height: 100px;
+				padding: 5px;
+				margin: 0 10px 0 0; 
+			}
+
+			.compteur span.titre {
+				display: block;
+				font-size: 16px;
+				width: 100%;
+				text-align: center;
+				padding: 0 0 10px 0;
+			}
+			
+			.compteur span.libelle {
+				float: left;
+				clear: both;
+				width: 150px;
+			}
+			.compteur span.valeur {
+				float: left;
+			}
+		</style>
+
+		<script type="text/javascript" src="js/jquery-1.8.2.js"></script>
+		<script type="text/javascript" src="js/moment.js"></script>
+		<script src="js/highcharts.js"></script>
+		<script src="js/highcharts-more.js"></script>
+		<script type="text/javascript">
+$(function () {
+Highcharts.setOptions({
+	global: {
+		useUTC: false
+	},
+	lang: {
+		months: ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'],
+		weekdays: ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'],
+		shortMonths: ['Jan', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Aout', 'Sep', 'Oct', 'Nov', 'Déc'],
+	}	
+});
+
+
+var currDate = moment().subtract('days', 3).format("YYYY-MM-DD 00:00:00");
+//var currDate = moment().format("YYYY-MM-DD 00:00:00");
+$('#dateMin').val(currDate);
+//$('#dateMin').val("2013-08-04 22:00:00");
+//$('#dateMax').val("2013-08-05 09:00:00");
+var intervalle = $('#intervalle').val();
+var temperatures = {moyennes: undefined};
+
+function getDateLocalisee(dateUtc) {
+	return dateUtc + moment().zone() * 60 * 1000;
+}
+
+function getTemperatures(chart) {
+	$.getJSON('/cgi-bin/controlleurWeb.py', {
+		'type': 'temperatures',
+		'dateMin': $('#dateMin').val(),
+		'dateMax': $('#dateMax').val(),
+		'idSonde': undefined
+	}).done(function(data) {
+
+		var sondes={};
+		//var moyennes=[];
+		
+		$.each(data, function(index, value) {
+			if (!sondes[value.sonde]) {
+				sondes[value.sonde] = [];
+			}
+			sondes[value.sonde].push([getDateLocalisee(value.date), value.temperature]);
+		});
+		
+		var temperatures = {
+			moyennes: [],
+			minMax : [
+				[(new Date(2013,4, 1)).getTime(), 5, 15], 
+				[(new Date(2013,4, 2)).getTime(), 5.5, 15.8], 
+				[(new Date(2013,4, 3)).getTime(), 4.8, 14.8], 
+				[(new Date(2013,4, 5)).getTime(), 7, 16.8], 
+				[(new Date(2013,4, 6)).getTime(), 6.7, 16.3], 
+				[(new Date(2013,4, 7)).getTime(), 6.3, 17], 
+				[(new Date(2013,4, 8)).getTime(), 6, 14.7]
+			]
+		 }
+		 
+		 var index = 0;
+		 $.each(sondes, function(sonde, releves) {
+			var nomSonde = sonde;
+			if (sonde == '28-0000048efd60') {
+				nomSonde = 'Grenier'; // Sonde n°2
+			} else if (sonde == '28-000004b90eba') {
+				nomSonde = 'Air neuf'; // Sonde n°3
+			} else if (sonde == '28-000004b90ebe') {
+				nomSonde = 'Air vicié'; // Sonde n°4
+			}
+		 
+			chart.addSeries({
+                name: nomSonde,
+                data: releves
+            }, false);
+			//chart.series[index].setData(releves);
+			//index++;
+		});
+        chart.redraw();		 
+	});
+}
+
+function getPappA(chart, dateMinActuelle, dateMax, papps, moyennes) {
+	if (dateMinActuelle < dateMax) {
+		var dateMaxActuelle = moment(dateMinActuelle).add(2, 'd');
+		if (dateMaxActuelle > dateMax) {
+			dateMaxActuelle = dateMax;
+		}
+		
+		$.ajax({
+			url: '/cgi-bin/controlleurWeb.py',
+			data: {
+				type: 'papp',
+				dateMin: dateMinActuelle.format("YYYY-MM-DD HH:mm:ss"),
+				dateMax: dateMaxActuelle.format("YYYY-MM-DD HH:mm:ss")
+			},
+			success: function(data) {
+
+				$.each(data, function(index, value) {
+					if (value.ptec == 'HC..' || value.ptec == 'HCJB') {
+						moyennes.push([new Date(value.date).getTime(), value.papp]);
+						if (papps.length > 0 && papps[papps.length - 1][1] != null) {
+							papps.push([getDateLocalisee(value.date), null]);
+							//chart.series[0].addPoint([getDateLocalisee(value.date), null]);
+						}
+					} else {
+						if (moyennes.length > 0  && moyennes[moyennes.length - 1][1] != null) {
+							moyennes.push([getDateLocalisee(value.date), null]);
+						}
+						papps.push([getDateLocalisee(value.date), value.papp]);
+						//chart.series[0].addPoint([getDateLocalisee(value.date), value.papp]);
+					}
+				});
+
+		//		chart.series[0].setData(moyennes);
+		//		chart.series[1].setData(papps);
+				
+				chart.series[0].setData(papps);
+				getPappA(chart, dateMinActuelle.add(2, 'd'), dateMax, papps, moyennes);
+			}
+		});
+	}
+}
+
+function getPapp(chart) {
+	var papps=[];
+	var moyennes=[];
+	chart.addSeries({
+		name: "Production",
+		data: papps,
+		color: 'green'
+	}, true);
+
+	var dateMax = moment($('#dateMax').val(), "YYYY-MM-DD HH:mm:ss");
+	if (!dateMax) {
+		dateMax = moment();
+	}
+	var dateMinActuelle = moment($('#dateMin').val(), "YYYY-MM-DD HH:mm:ss");
+	getPappA(chart, dateMinActuelle, dateMax, papps, moyennes);
+}
+
+function getFormatDate(intervalle) {
+	var formatDate = "DD/MM/YY";
+	if (intervalle == 'heure') {
+		formatDate = "HH[h le] DD";
+	} else if (intervalle == 'jour') {
+		formatDate = "DD/MM/YY";
+	} else if (intervalle == 'semaine') {
+		formatDate = "DD/MM/YY";
+	} else if (intervalle == 'mois') {
+		formatDate = "MM/YY";
+	} else if (intervalle == 'anne-e') {
+		formatDate = "YYYY";
+	}
+	
+	return formatDate;
+}
+
+function getConsoBase(chart, dateMin, dateMax, adco, intervalle) {
+	var formatDate = getFormatDate(intervalle);
+	
+	$.getJSON('/cgi-bin/controlleurWeb.py', {
+		'type': 'consoBase',
+		'dateMin': dateMin,
+		'dateMax': dateMax,
+		'adco': adco,
+		'intervalle': intervalle
+	}).done(function(data) {
+		var bases=[];
+
+		$.each(data, function(index, value) {
+			var dateLocalisee = getDateLocalisee(value.date);
+			bases.push([dateLocalisee, value.base == 0?null:value.base]);
+		});
+		
+		chart.series[0].setData(bases);
+		 
+	});
+}
+
+function getConsoTempo(chart, dateMin, dateMax, adco, intervalle) {
+	var formatDate = getFormatDate(intervalle);
+
+	$.getJSON('/cgi-bin/controlleurWeb.py', {
+		'type': 'consoTempo',
+		'dateMin': dateMin,
+		'dateMax': dateMax,
+		'adco': adco,
+		'intervalle': intervalle
+	}).done(function(data) {
+		var hcjb=[];
+		var hpjb=[];
+		var hcjw=[];
+		var hpjw=[];
+		var hcjr=[];
+		var hpjr=[];
+		var dates=[];
+
+		$.each(data, function(index, value) {
+			var dateLocalisee = getDateLocalisee(value.date);
+			hcjb.push([dateLocalisee, value.hcjb == 0?null:value.hcjb]);
+			hpjb.push([dateLocalisee, value.hpjb == 0?null:value.hpjb]);
+			hcjw.push([dateLocalisee, value.hcjw == 0?null:value.hcjw]);
+			hpjw.push([dateLocalisee, value.hpjw == 0?null:value.hpjw]);
+			hcjr.push([dateLocalisee, value.hcjr == 0?null:value.hcjr]);
+			hpjr.push([dateLocalisee, value.hpjr == 0?null:value.hpjr]);
+		});
+		
+		//chart.xAxis[0].setCategories(dates);
+		chart.series[0].setData(hcjb);
+		chart.series[1].setData(hpjb);
+		chart.series[2].setData(hcjw);
+		chart.series[3].setData(hpjw);
+		chart.series[4].setData(hcjr);
+		chart.series[5].setData(hpjr);
+	});
+}
+
+chartTemperature = displayChart('Température', 'Temperature (°c)', 'container-temp', 'spline');
+getTemperatures(chartTemperature, intervalle);
+
+chartConsoBase = displayChartConsoBase('Production photovoltaïque',
+		[
+			{stack: 'BASE', data: [], 'name': 'Production'} 
+		], 'container-production-photo'
+);
+getConsoBase(chartConsoBase, $('#dateMin').val(), $('#dateMax').val(), '021028749519', intervalle);
+
+chartPapp = displayChart('Puissance photovoltaïque instantanée', 'Puissance apparente (VA)', 'container-papp', 'line');
+getPapp(chartPapp);
+
+chartConsoTempo = displayChartConsoTempo(
+		[
+			{stack: 'HC', data: [], name: 'HCJB'}, 
+			{stack: 'HP', data: [], name: 'HPJB'}, 
+			{stack: 'HC', data: [], name: 'HCJW'}, 
+			{stack: 'HP', data: [], name: 'HPJW'}, 
+			{stack: 'HC', data: [], name: 'HCJR'}, 
+			{stack: 'HP', data: [], name: 'HPJR'} 
+		], 'container-conso-jour', intervalle
+);
+getConsoTempo(chartConsoTempo, $('#dateMin').val(), $('#dateMax').val(), '039601217913', intervalle);
+
+$('#btn_valider').click(function() {
+//	getTemperatures(chartTemperature);
+//	getPapp(chartPapp);
+	getConsoBase(chartConsoBase, $('#dateMin').val(), $('#dateMax').val(), '021028749519', $('#intervalle').val());
+	getConsoTempo(chartConsoTempo, $('#dateMin').val(), $('#dateMax').val(), '039601217913', $('#intervalle').val());
+});
+
+function displayChartConsoTempo(consommations, conteneur, intervalle) {
+	var minTickInterval = 1000 * 60 * 60 * 24;
+	if (intervalle == 'heure') {
+		minTickInterval = 1000 * 60 * 60;
+	}
+	chart = new Highcharts.Chart({
+		chart: {
+			renderTo: conteneur,
+			zoomType: 'x',
+			type: 'column'
+		},
+		title: {
+			text: 'Consommation Tempo'
+		},
+		xAxis: {
+			labels: {
+				//'tickInterval' : 1000 * 60 * 60
+				//'step': step
+			},
+			'type': 'datetime',
+			'minTickInterval': minTickInterval
+		},
+		yAxis: {
+			min: 0,
+			title: {
+			    text: 'Consommation (Wh)'
+			},
+			stackLabels: {
+				enabled: true,
+				style: {
+					fontWeight: 'bold',
+					color: (Highcharts.theme && Highcharts.theme.textColor) || 'gray'
+				}
+			}
+		},
+		plotOptions: {
+			column: {
+				stacking: 'normal',
+				dataLabels: {
+					enabled: true,
+					color: (Highcharts.theme && Highcharts.theme.dataLabelsColor) || 'white'
+				}
+			}
+		},
+		colors: ['#C8BEFF', '#33267F', '#cecece', '#555555', '#DB6E53', '#7F2520'],
+		series: consommations
+	});
+
+	return chart;
+}
+
+function displayChartConsoBase(titre, productions, conteneur) {
+	var minTickInterval = 1000 * 60 * 60 * 24;
+	chart = new Highcharts.Chart({
+		chart: {
+			renderTo: conteneur,
+			zoomType: 'x',
+			type: 'column'
+		},
+		title: {
+			'text': titre
+		},
+		xAxis: {
+			'type': 'datetime',
+			'minTickInterval': minTickInterval
+		},
+		yAxis: {
+			min: 0,
+			title: {
+			    text: 'Production (Wh)'
+			},
+		        stackLabels: {
+		            enabled: true,
+		            style: {
+		                fontWeight: 'bold',
+		                color: (Highcharts.theme && Highcharts.theme.textColor) || 'gray'
+		            }
+		        }
+		},
+		plotOptions: {
+			column: {
+				stacking: 'normal',
+				dataLabels: {
+					enabled: true,
+					color: (Highcharts.theme && Highcharts.theme.dataLabelsColor) || 'white'
+				}
+			}
+		},
+		colors: ['green'],
+		series: productions
+	});
+
+	return chart;
+}
+
+function displayChart(titre, titreOrdonnee, conteneur, typeGraphique) {
+	chart = new Highcharts.Chart({
+        chart: {
+			renderTo: conteneur,
+			zoomType: 'x',
+            type: typeGraphique
+		},
+		title: {
+			'text': titre
+		},
+		xAxis: {
+			type: 'datetime'
+		},
+		yAxis: {
+			min: 0,
+			title: {
+				text: titreOrdonnee
+			}
+		},
+	    plotOptions: {
+			series: {
+				marker: {
+					enabled: false
+				}
+			}
+		},
+		tooltip: {
+			headerFormat: '<span style="font-size:10px">{point.key}</span><table>',
+			pointFormat: '<tr><td style="color:{series.color};padding:0">{series.name}: </td>' +
+				'<td style="padding:0"><b>{point.y:.1f}</b></td></tr>',
+			footerFormat: '</table>',
+			shared: true,
+			useHTML: true
+		},
+	    series: [
+		/*{
+	    	name: nomSerieMoyenne,
+	    	data: donnees.moyennes,
+	    	zIndex: 1,
+	    	marker: {
+	    		fillColor: 'white',
+	    		lineWidth: 2,
+	    		lineColor: Highcharts.getOptions().colors[0]
+	    	}
+	    },
+	    {
+	    	name: 'Production',
+	    	data: []
+	    }
+		, {
+	        name: 'Range',
+	        data: temperatures.minMax,
+	        type: 'arearange',
+	        lineWidth: 0,
+	    	linkedTo: ':previous',
+	    	color: Highcharts.getOptions().colors[0],
+	    	fillOpacity: 0.3,
+	    	zIndex: 0
+	    }*/
+		]
+	});
+		
+	return chart;
+}
+
+
+function getTemperaturesMinMaxAvg(dateMin, dateMax, sonde) {
+	$.getJSON('/cgi-bin/controlleurWeb.py', {
+		'type': 'temperaturesMinMaxAvg',
+		'dateMin': dateMin,
+		'dateMax': dateMax,
+		'sonde': '28-000004b90eba'
+	}).done(function(data) {
+//		$('#28-000004b90eba
+	});
+}
+
+	
+    });
+    
+
+		</script>
+	</head>
+	<body>
+		Période du : <input type="text" id="dateMin">
+		au : <input type="text" id="dateMax">
+		intervalle : <select id="intervalle">
+			<option value="heure">heure</option>
+			<option value="jour" selected="selected">jour</option>
+			<option value="semaine">semaine</option>
+			<option value="mois">mois</option>
+			<option value="annee">annee</option>
+		</select>
+		<button id="btn_valider">Valider</button>
+<!--		<button id="btn_aujourdhui">Aujourd'hui</button>
+		<button id="btn_moisCourant">Mois courant</button>
+-->
+
+		<!--
+		Criteres de filtrages
+			Date : 
+				periode : min - Calendrier, max - Calendrier
+				jour : 01/01/2013 - Calendrier avec jour prec, jour suivant
+				mois : via selecteur avec bouton mois prec, mois suivant
+				annee : via selecteur
+				Toutes les dates
+		Criteres de regroupement
+			Date:
+				par jour
+				par mois
+				par an
+		-->	
+		<div id="container-temp" style="min-width: 400px; height: 400px; margin: 0 auto"></div>
+		<div id="container-production-photo" style="min-width: 400px; height: 400px; margin: 0 auto"></div>
+		<div id="container-papp" style="min-width: 400px; height: 400px; margin: 0 auto"></div>
+		<div id="container-conso-jour" style="min-width: 400px; height: 400px; margin: 0 auto"></div>
+
+
+
+		<div>
+			<div class="compteur">
+				<span class="titre">Consommation</span>
+
+				<span class="libelle">Instantanée (W)</span>
+				<span class="valeur">150</span>
+
+				<span class="libelle">HP jour / veille (Wh)</span>
+				<span class="valeur">11 250 / 7 830</span>
+
+				<span class="libelle">HC jour / veille (Wh)</span>
+				<span class="valeur">11 250 / 7 830</span>
+			</div>	
+			<div class="compteur">
+				<span class="titre">Relevés consommation</span>
+				<span class="libelle">HP / HC Bleu (kWh)</span>
+				<span class="valeur">11 250 / 7 830</span>
+
+				<span class="libelle">HP / HC Blanc (kWh)</span>
+				<span class="valeur">10 / 10</span>
+
+				<span class="libelle">HP / HC Rouge (kWh)</span>
+				<span class="valeur">10 / 10</span>
+			</div>
+			<div class="compteur">
+				<span class="titre">Relevés production</span>
+
+				<span class="libelle">Instantanée (W)</span>
+				<span class="valeur">150</span>
+				
+				<span class="libelle">Jour / veille (kWh)</span>
+				<span class="valeur">6 / 14</span>
+
+				<span class="libelle">04-2013 / 04-2012 (kWh)</span>
+				<span class="valeur">1 300 / 1 250</span>
+
+				<span class="libelle">2013 / 2012 (kWh)</span>
+				<span class="valeur">1 300 / 1 250</span>
+			</div>
+			<div id="28-000004b90eba" class="compteur">
+				<span class="titre">Air neuf</span>
+				<span class="libelle">Temperature (°c)</span>
+				<span class="valeur">-</span>
+				
+				<span class="libelle">Minimale jour / veille</span>
+				<span class="valeur">- / -</span>
+				<span class="libelle">&nbsp;</span>
+				<span class="valeur">- / -</span>
+				
+				<span class="libelle">Maximale jour / veille</span>
+				<span class="valeur">- / -</span>
+				<span class="libelle">&nbsp;</span>
+				<span class="valeur">- / -</span>
+			</div>
+		</div>
+	</body>
+</html>

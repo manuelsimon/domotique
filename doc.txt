@@ -1,0 +1,9 @@
+Lancement au reboot :
+  crontab -e -u pi
+  Ajout de la ligne @reboot /home/pi/domotique/start.sh
+  Ajout de la ligne */5 * * * * /home/pi/domotique/start.sh
+  sudo update-rc.d cron defaults
+
+ Tests sondes de température
+	Cable éthernet cat5, 100m enroulé : sonde KO
+	sur une 15aines de métres : sonde OK
